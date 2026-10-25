@@ -431,6 +431,9 @@ export const en = {
       authChoiceFailedRetry: "Pick another provider or auth method, or choose Skip for now.",
       authChoiceFailedTitle: "Provider setup failed",
       authChoiceRequired: "auth choice is required",
+      defaultModelReplaced:
+        "Your account can't access \"{previous}\". Switching the default model to \"{replacement}\". Change it later with `openclaw config set agents.defaults.model`.",
+      defaultModelReplacedTitle: "Default model adjusted",
       channelsTitle: "Channels",
       configHandling: "Config handling",
       durationNote:

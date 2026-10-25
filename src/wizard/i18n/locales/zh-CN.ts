@@ -415,6 +415,9 @@ export const zh_CN = {
       authChoiceFailedRetry: "请选择其他提供商或认证方式，或选择暂时跳过。",
       authChoiceFailedTitle: "提供商设置失败",
       authChoiceRequired: "必须选择认证方式",
+      defaultModelReplaced:
+        "你的账号无法访问 \"{previous}\"，已将默认模型切换到 \"{replacement}\"。可通过 `openclaw config set agents.defaults.model` 修改。",
+      defaultModelReplacedTitle: "默认模型已调整",
       channelsTitle: "频道",
       configHandling: "配置处理",
       durationNote:

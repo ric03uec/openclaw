@@ -13,6 +13,7 @@ import {
   normalizeAgentModelMapForConfig,
   normalizeAgentModelRefForConfig,
   resolveAgentModelFallbackValues,
+  resolveAgentModelPrimaryValue,
   toAgentModelListLike,
 } from "../config/model-input.js";
 import type { OptionalBootstrapFileName } from "../config/types.agent-defaults.js";
@@ -137,6 +138,26 @@ export function applyOnboardingWorkspace(
       defaults: { ...config.agents?.defaults, workspace },
     },
   };
+}
+
+/**
+ * True when the config carries an explicit primary model for the onboarding
+ * target — either on the agent entry or in `agents.defaults.model`. When
+ * neither is set, the resolver falls back to the hardcoded wizard default,
+ * which is the only case where automatic preflight remediation is safe.
+ */
+export function hasExplicitPrimaryModel(
+  config: OpenClawConfig,
+  target: OnboardingAgentTarget,
+): boolean {
+  const entry = resolveMutableAgentEntry(config, target.agentId);
+  if (resolveAgentModelPrimaryValue(entry?.model) !== undefined) {
+    return true;
+  }
+  if (resolveAgentModelPrimaryValue(config.agents?.defaults?.model) !== undefined) {
+    return true;
+  }
+  return false;
 }
 
 export function applyOnboardingPrimaryModel(
