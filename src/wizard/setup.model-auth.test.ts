@@ -31,6 +31,7 @@ type ResolvePluginSetupProvider =
 
 const applyAuthChoice = vi.hoisted(() => vi.fn());
 const warnIfModelConfigLooksOff = vi.hoisted(() => vi.fn());
+const preflightDefaultModelAccess = vi.hoisted(() => vi.fn(async () => ({ status: "ok" })));
 const resolvePreferredProviderForAuthChoice = vi.hoisted(() => vi.fn());
 const promptDefaultModel = vi.hoisted(() => vi.fn());
 const promptAuthChoiceGrouped = vi.hoisted(() => vi.fn());
@@ -55,6 +56,7 @@ vi.mock("../commands/auth-choice.apply.js", () => ({
   prepareAuthChoice: applyAuthChoice,
 }));
 vi.mock("../commands/auth-choice.model-check.js", () => ({ warnIfModelConfigLooksOff }));
+vi.mock("../commands/auth-choice.model-preflight.js", () => ({ preflightDefaultModelAccess }));
 vi.mock("../plugins/provider-auth-choice-preference.js", () => ({
   resolvePreferredProviderForAuthChoice,
 }));
@@ -88,6 +90,7 @@ describe("runSetupModelAuthStep", () => {
     vi.clearAllMocks();
     promptDefaultModel.mockResolvedValue({});
     warnIfModelConfigLooksOff.mockResolvedValue(undefined);
+    preflightDefaultModelAccess.mockReset().mockResolvedValue({ status: "ok" });
     detectAvailableSetupProviderIds.mockResolvedValue(new Set(["ollama"]));
   });
 
@@ -201,6 +204,55 @@ describe("runSetupModelAuthStep", () => {
       fallbacks: ["openai/fallback-model"],
     });
     expect(result.config.agents?.defaults?.model).toBe("openai/global-model");
+  });
+
+  it("auto-replaces the hardcoded wizard default when the live catalog cannot see it", async () => {
+    const config: OpenClawConfig = {};
+    promptAuthChoiceGrouped.mockResolvedValueOnce("anthropic-cli");
+    applyAuthChoice.mockResolvedValueOnce(
+      candidate(config, [
+        {
+          profileId: "openai:default",
+          credential: { type: "api_key", provider: "openai", key: "test-key" },
+        },
+      ]),
+    );
+    preflightDefaultModelAccess.mockResolvedValueOnce({
+      status: "replace",
+      configuredRef: "openai/gpt-6-astra",
+      replacement: { provider: "openai", modelId: "gpt-5", ref: "openai/gpt-5" },
+    });
+    const prompter = createWizardPrompter();
+    const result = await runStep({ config, prompter });
+    expect(preflightDefaultModelAccess).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ pendingAuthProfiles: expect.any(Array) }),
+    );
+    expect(result.config.agents?.defaults?.model).toEqual({ primary: "openai/gpt-5" });
+    expect(prompter.note).toHaveBeenCalledWith(
+      expect.stringContaining("openai/gpt-5"),
+      expect.any(String),
+    );
+    expect(result.persistAuthProfiles).not.toHaveBeenCalled();
+  });
+
+  it("skips preflight replacement when a primary model is already configured", async () => {
+    const config: OpenClawConfig = {
+      agents: { defaults: { model: { primary: "openai/custom-deployment" } } },
+    };
+    promptAuthChoiceGrouped.mockResolvedValueOnce("anthropic-cli");
+    applyAuthChoice.mockResolvedValueOnce(candidate(config));
+    await runStep({ config });
+    expect(preflightDefaultModelAccess).not.toHaveBeenCalled();
+  });
+
+  it("skips preflight replacement when the user explicitly selects a model", async () => {
+    const config: OpenClawConfig = {};
+    promptAuthChoiceGrouped.mockResolvedValueOnce("anthropic-cli");
+    applyAuthChoice.mockResolvedValueOnce(candidate(config));
+    promptDefaultModel.mockResolvedValueOnce({ model: "openai/gpt-6-astra" });
+    await runStep({ config });
+    expect(preflightDefaultModelAccess).not.toHaveBeenCalled();
   });
 
   it("keeps the current provider without applying auth or automatic lean changes", async () => {

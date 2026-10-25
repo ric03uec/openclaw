@@ -247,13 +247,17 @@ export async function runSetupModelAuthStep(params: {
     const [
       { prepareAuthChoice },
       { warnIfModelConfigLooksOff },
+      { preflightDefaultModelAccess },
       { resolvePreferredProviderForAuthChoice },
       { promptDefaultModel },
+      { hasExplicitPrimaryModel },
     ] = await Promise.all([
       import("../commands/auth-choice.apply.js"),
       import("../commands/auth-choice.model-check.js"),
+      import("../commands/auth-choice.model-preflight.js"),
       import("../plugins/provider-auth-choice-preference.js"),
       import("../flows/model-picker.js"),
+      import("../commands/onboard-agent-target.js"),
     ]);
     prompter.disableBackNavigation?.();
     const agentScopedModels = nextConfig.agents?.ownership === "explicit";
@@ -325,6 +329,7 @@ export async function runSetupModelAuthStep(params: {
       (authChoiceModelSelectionPolicy.promptWhenAuthChoiceProvided &&
         (!params.preserveExistingModelSelection ||
           !authChoiceModelSelectionPolicy.allowKeepCurrent));
+    let modelExplicitlySelected = false;
     if (shouldPromptModelSelection) {
       const modelSelection = await promptDefaultModel({
         config: nextConfig,
@@ -343,6 +348,36 @@ export async function runSetupModelAuthStep(params: {
       }
       if (modelSelection.model) {
         nextConfig = applyOnboardingPrimaryModel(nextConfig, target, modelSelection.model);
+        modelExplicitlySelected = true;
+      }
+    }
+
+    // Only auto-replace when the config has no explicit primary model
+    // configured — meaning the resolver is still returning the hardcoded
+    // wizard default. User-picked models (from `promptDefaultModel` above)
+    // and any config-authored primary (operator-provisioned openclaw.json,
+    // migrated-in defaults, or a prior onboarding run) are left alone.
+    // `warnIfModelConfigLooksOff` below still surfaces auth/route warnings
+    // for those; we just do not silently rewrite them here.
+    const autoReplaceEligible =
+      !modelExplicitlySelected && !hasExplicitPrimaryModel(nextConfig, target);
+    if (autoReplaceEligible) {
+      const preflight = await preflightDefaultModelAccess(nextConfig, {
+        agentId: target.agentId,
+        agentDir: params.agentDir ?? target.agentDir,
+        workspaceDir: target.workspaceDir,
+        pendingAuthProfiles: authProfiles,
+        ...(env ? { env } : {}),
+      });
+      if (preflight.status === "replace") {
+        nextConfig = applyOnboardingPrimaryModel(nextConfig, target, preflight.replacement.ref);
+        await prompter.note(
+          t("wizard.setup.defaultModelReplaced", {
+            previous: preflight.configuredRef,
+            replacement: preflight.replacement.ref,
+          }),
+          t("wizard.setup.defaultModelReplacedTitle"),
+        );
       }
     }
 
